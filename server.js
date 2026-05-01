@@ -9,8 +9,8 @@ app.post('/create-checkout-session', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: process.env.PRICE_ID, quantity: 1 }],
-      success_url: 'https://yoursite.com/success',
-      cancel_url: 'https://yoursite.com',
+      success_url: 'https://my-app-8gfj.onrender.com/',
+      cancel_url: 'https://my-app-8gfj.onrender.com/',
     });
     res.redirect(303, session.url);
   } catch (err) {
