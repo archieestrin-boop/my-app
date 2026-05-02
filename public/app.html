@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iron Log — Workout Tracker</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #fafaf8; color: #1a1a1a; font-family: 'Georgia', serif; }
+    select, input, button { font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const STRIPE_PK = "pk_test_51TSHacCo9YGYkEzEukmiH6Uas6wtT3h9sDloZVAjD1NEMyC2eXDHz2HPDsDwkJWz3l7sLwOdpFqi0IHlJC3njz1S00ylEZX0yk";
+
+    const EXERCISE_GROUPS = {
+      "Legs — Quads": ["Barbell back squat","Front squat","Goblet squat","Hack squat","Bulgarian split squat","Walking lunges","Reverse lunges","Step-ups","Leg press","Leg extension"],
+      "Legs — Hamstrings & Calves": ["Leg curl (lying)","Leg curl (seated)","Standing calf raise","Seated calf raise"],
+      "Posterior Chain": ["Deadlift (conventional)","Deadlift (sumo)","Romanian deadlift","Stiff-leg deadlift","Hip thrust","Glute bridge","Good mornings","Cable pull-through"],
+      "Chest": ["Bench press (flat)","Bench press (incline)","Bench press (decline)","Dumbbell bench press","Incline dumbbell press","Decline dumbbell press","Chest press machine","Dips","Push-ups","Cable fly","Pec deck"],
+      "Shoulders": ["Overhead press (barbell)","Overhead press (dumbbell)","Arnold press","Lateral raise","Front raise","Rear delt fly","Cable lateral raise","Face pulls","Upright row"],
+      "Back": ["Pull-ups","Chin-ups","Lat pulldown","Straight arm pulldown","Barbell row","Dumbbell row","Seated cable row","T-bar row","Chest supported row"],
+      "Biceps": ["Barbell curl","Dumbbell curl","Hammer curl","Preacher curl","Cable curl","Incline dumbbell curl"],
+      "Triceps": ["Tricep pushdown","Overhead tricep extension","Skull crushers","Close grip bench press","Dips (triceps focus)"],
+      "Carries": ["Farmer's carry","Suitcase carry","Trap bar carry","Overhead carry"],
+      "Core": ["Plank","Side plank","Hanging leg raise","Leg raise","Cable crunch","Ab wheel rollout","Russian twists","Sit-ups","Crunches"],
+    };
+
+    const MUSCLES = Object.keys(EXERCISE_GROUPS);
+    const FIRST_EX = Object.values(EXERCISE_GROUPS)[0][0];
+    const M_COLOR = {
+      "Legs — Quads":"#f59e0b","Legs — Hamstrings & Calves":"#fbbf24","Posterior Chain":"#ef4444",
+      "Chest":"#f97316","Shoulders":"#a855f7","Back":"#3b82f6","Biceps":"#10b981",
+      "Triceps":"#06b6d4","Carries":"#6b7280","Core":"#84cc16",
+    };
+
+    function todayStr() { return new Date().toISOString().split("T")[0]; }
+    function fmtDate(d) { return new Date(d).toLocaleDateString("en-US", { month:"short", day:"numeric" }); }
+    function load(k, fb) { try { return JSON.parse(localStorage.getItem(k)) ?? fb; } catch { return fb; } }
+    function persist(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
+    function groupOf(ex) { return Object.entries(EXERCISE_GROUPS).find(([,exs])=>exs.includes(ex))?.[0]||MUSCLES[0]; }
+
+    const TRIAL_DAYS = 7;
+
+    function getTrialState() {
+      const startRaw = load("mvp_trial_start", null);
+      if (!startRaw) return { started:false, active:false, expired:false, daysLeft:0 };
+      const msElapsed = new Date() - new Date(startRaw);
+      const daysLeft = Math.max(0, Math.ceil(TRIAL_DAYS - msElapsed / 86400000));
+      return { started:true, active:daysLeft>0, expired:daysLeft===0, daysLeft };
+    }
+
+    const inputBase = {
+      background:"#fff", border:"1px solid #e0dbd0", color:"#1a1a1a",
+      padding:"10px 12px", fontFamily:"'Georgia',serif", fontSize:14,
+      outline:"none", width:"100%", boxSizing:"border-box",
+    };
+    const mono = { fontFamily:"'Courier New',monospace" };
+
+    function FL({ children }) { return <div style={{ fontSize:10, ...mono, letterSpacing:3, color:"#999", textTransform:"uppercase", marginBottom:6 }}>{children}</div>; }
+    function SL({ children }) { return <div style={{ fontSize:10, ...mono, letterSpacing:3, color:"#bbb", textTransform:"uppercase", marginBottom:14 }}>{children}</div>; }
+    function PF({ children }) { return <div style={{ fontSize:9, ...mono, letterSpacing:3, color:"#555", textTransform:"uppercase", marginBottom:6 }}>{children}</div>; }
+
+    function Card({ w, onDel, showDate }) {
+      const c = M_COLOR[w.muscle]||"#888";
+      return (
+        <div style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", border:"1px solid #eee", marginBottom:6, background:"#fff" }}>
+          <div style={{ width:3, height:36, background:c, flexShrink:0 }}/>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontWeight:700, fontSize:13, marginBottom:3 }}>{w.exercise}</div>
+            <div style={{ fontSize:11, ...mono, color:"#999" }}>
+              {w.sets}×{w.reps}{w.weight>0?` @ ${w.weight}kg`:" BW"}
+              {showDate&&<span style={{ marginLeft:8 }}>{fmtDate(w.date)}</span>}
+              {w.note&&<span style={{ marginLeft:8, fontStyle:"italic" }}>{w.note}</span>}
+            </div>
+          </div>
+          <span style={{ color:c, fontSize:10, ...mono, letterSpacing:1, flexShrink:0, maxWidth:100, textAlign:"right", lineHeight:1.3 }}>{w.muscle}</span>
+          <button onClick={()=>onDel(w.id)} style={{ background:"none", border:"none", color:"#ccc", cursor:"pointer", fontSize:14, padding:"2px 6px" }}
+            onMouseEnter={e=>e.target.style.color="#ef4444"} onMouseLeave={e=>e.target.style.color="#ccc"}>✕</button>
+        </div>
+      );
+    }
+
+    function Kpi({ label, val, accent }) {
+      return (
+        <div>
+          <div style={{ fontSize:9, ...mono, letterSpacing:3, color:"#bbb", textTransform:"uppercase" }}>{label}</div>
+          <div style={{ fontSize:20, fontWeight:700, letterSpacing:-1, color:accent?"#ef4444":"#1a1a1a" }}>{val}</div>
+        </div>
+      );
+    }
+
+    function Empty({ text, sub }) {
+      return (
+        <div style={{ textAlign:"center", padding:"48px 0" }}>
+          <div style={{ fontSize:14, fontWeight:700, color:"#bbb", marginBottom:6 }}>{text}</div>
+          <div style={{ fontSize:11, ...mono, letterSpacing:2, color:"#ccc" }}>{sub}</div>
+        </div>
+      );
+    }
+
+    function PaywallPage({ email, setEmail, onSubscribe, payError, paying, stripeReady }) {
+      return (
+        <div style={{ fontFamily:"'Georgia',serif", background:"#0e0e0e", minHeight:"100vh", color:"#fafaf8", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 24px" }}>
+          <div style={{ maxWidth:400, width:"100%" }}>
+            <div style={{ textAlign:"center", marginBottom:32 }}>
+              <div style={{ fontSize:32, marginBottom:12 }}>🔒</div>
+              <div style={{ fontSize:10, ...mono, letterSpacing:5, color:"#555", marginBottom:12 }}>YOUR FREE TRIAL HAS ENDED</div>
+              <h2 style={{ fontSize:26, fontWeight:700, letterSpacing:-1, margin:"0 0 8px" }}>Continue with Iron Log</h2>
+              <p style={{ color:"#666", ...mono, fontSize:13, lineHeight:1.6, margin:0 }}>Your workouts are saved and waiting. Subscribe to keep logging.</p>
+            </div>
+
+            <div style={{ background:"#1a1a1a", border:"1px solid #ef4444", padding:"20px 24px", marginBottom:20, textAlign:"center" }}>
+              <div style={{ fontSize:40, fontWeight:700, letterSpacing:-2, lineHeight:1 }}>$15</div>
+              <div style={{ ...mono, fontSize:11, color:"#666", letterSpacing:2, marginTop:4 }}>PER MONTH · CANCEL ANYTIME</div>
+              <div style={{ marginTop:14, display:"flex", flexDirection:"column", gap:5 }}>
+                {["Full exercise library (77 lifts)","Unlimited workout logging","PR tracking & progress view"].map(f=>(
+                  <div key={f} style={{ fontSize:12, ...mono, color:"#888", display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ color:"#ef4444" }}>✓</span>{f}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ background:"#111", border:"1px solid #222", padding:"24px" }}>
+              <div style={{ fontSize:10, ...mono, letterSpacing:3, color:"#555", marginBottom:16 }}>
+                PAYMENT DETAILS
+                {stripeReady && <span style={{ color:"#10b981", marginLeft:8 }}>🔒 Secured by Stripe</span>}
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <PF>Email</PF>
+                <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" type="email"
+                  style={{ background:"#1a1a1a", border:"1px solid #2a2a2a", color:"#fafaf8", padding:"11px 14px", ...mono, fontSize:14, outline:"none", width:"100%", boxSizing:"border-box" }}/>
+              </div>
+              <div style={{ marginBottom:20 }}>
+                <PF>Card Details</PF>
+                <div id="stripe-card-element" style={{ background:"#1a1a1a", border:"1px solid #2a2a2a", padding:"13px 14px", minHeight:42 }}>
+                  {!stripeReady && <span style={{ ...mono, fontSize:13, color:"#555" }}>Loading secure card field…</span>}
+                </div>
+              </div>
+              {payError && <div style={{ fontSize:12, color:"#f87171", ...mono, marginBottom:14, letterSpacing:1 }}>⚠ {payError}</div>}
+              <button onClick={onSubscribe} disabled={paying || !stripeReady}
+                style={{ width:"100%", padding:"16px", background:paying?"#555":"#ef4444", color:"#fff", border:"none", ...mono, fontSize:12, fontWeight:700, letterSpacing:4, cursor:paying?"not-allowed":"pointer", transition:"background .2s" }}>
+                {paying ? "PROCESSING…" : "SUBSCRIBE — $15/MO"}
+              </button>
+              <div style={{ marginTop:12, fontSize:10, color:"#333", ...mono, letterSpacing:1, textAlign:"center", lineHeight:1.6 }}>
+                Card details handled directly by Stripe.
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [tab, setTab]           = useState("log");
+      const [workouts, setWorkouts] = useState(() => load("mvp_wt", []));
+      const [form, setForm]         = useState({ exercise:FIRST_EX, muscle:MUSCLES[0], sets:"", reps:"", weight:"", note:"" });
+      const [flash, setFlash]       = useState(false);
+      const [trial, setTrial]       = useState(getTrialState);
+      const [subscribed, setSubscribed] = useState(() => load("mvp_subscribed", false));
+      const [stripeReady, setStripeReady] = useState(false);
+      const [stripeObj, setStripeObj]     = useState(null);
+      const [cardElement, setCardElement] = useState(null);
+      const [email, setEmail]             = useState("");
+      const [paying, setPaying]           = useState(false);
+      const [payError, setPayError]       = useState("");
+      const [showPaywall, setShowPaywall] = useState(false);
+
+      useEffect(() => {
+        if (window.Stripe) { initStripe(); return; }
+        const script = document.createElement("script");
+        script.src = "https://js.stripe.com/v3/";
+        script.onload = initStripe;
+        document.head.appendChild(script);
+      }, []);
+
+      function initStripe() {
+        const stripe = window.Stripe(STRIPE_PK);
+        setStripeObj(stripe);
+        setStripeReady(true);
+      }
+
+      useEffect(() => {
+        if (!stripeReady || !showPaywall || cardElement) return;
+        const elements = stripeObj.elements();
+        const card = elements.create("card", {
+          style: {
+            base: { color:"#fafaf8", fontFamily:"'Courier New', monospace", fontSize:"15px", letterSpacing:"0.05em", "::placeholder":{ color:"#555" } },
+            invalid: { color:"#f87171" },
+          },
+        });
+        setTimeout(() => {
+          const mount = document.getElementById("stripe-card-element");
+          if (mount) { card.mount(mount); setCardElement(card); }
+        }, 100);
+      }, [stripeReady, showPaywall]);
+
+      useEffect(() => {
+        if (trial.expired && !subscribed) setShowPaywall(true);
+      }, [trial.expired, subscribed]);
+
+      function startTrial() {
+        persist("mvp_trial_start", new Date().toISOString());
+        setTrial(getTrialState());
+      }
+
+      function saveWorkouts(next) { setWorkouts(next); persist("mvp_wt", next); }
+
+      function logWorkout() {
+        if (!form.sets || !form.reps) return;
+        saveWorkouts([{ id:Date.now(), date:todayStr(), exercise:form.exercise, muscle:form.muscle, sets:+form.sets, reps:+form.reps, weight:form.weight?+form.weight:0, note:form.note }, ...workouts]);
+        setForm(f=>({...f,sets:"",reps:"",weight:"",note:""}));
+        setFlash(true); setTimeout(()=>setFlash(false),1400);
+      }
+
+      async function handleSubscribe() {
+        if (!stripeObj || !cardElement) return;
+        if (!email.includes("@")) return setPayError("Please enter a valid email address.");
+        setPayError(""); setPaying(true);
+        try {
+          const { paymentMethod, error: pmError } = await stripeObj.createPaymentMethod({ type:"card", card:cardElement, billing_details:{ email } });
+          if (pmError) { setPayError(pmError.message); setPaying(false); return; }
+          // In production: POST paymentMethod.id to your backend to create subscription
+          // For now redirect to Stripe checkout
+          window.location.href = "/create-checkout-session";
+        } catch (err) {
+          setPayError("Something went wrong. Please try again.");
+        } finally {
+          setPaying(false);
+        }
+      }
+
+      const todayLog = workouts.filter(w=>w.date===todayStr());
+      const prMap = {};
+      workouts.forEach(w=>{ if(!prMap[w.exercise]) prMap[w.exercise]=[]; prMap[w.exercise].push(w); });
+
+      // Landing page
+      if (!trial.started) return (
+        <div style={{ fontFamily:"'Georgia',serif", background:"#0e0e0e", minHeight:"100vh", color:"#fafaf8", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 24px", textAlign:"center" }}>
+          <div style={{ fontSize:10, ...mono, letterSpacing:6, color:"#555", marginBottom:24 }}>IRON LOG · MVP v0.1</div>
+          <h1 style={{ fontSize:"clamp(40px,9vw,72px)", fontWeight:700, letterSpacing:-3, lineHeight:1, margin:"0 0 20px" }}>
+            Track Every<br /><span style={{ color:"#ef4444" }}>Rep.</span>
+          </h1>
+          <p style={{ fontSize:16, color:"#888", maxWidth:360, lineHeight:1.7, ...mono, margin:"0 0 48px" }}>
+            The no-nonsense workout log for people who actually train. Log sets, track PRs, see progress.
+          </p>
+          <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:48, textAlign:"left" }}>
+            {[["77 exercises","across 10 muscle groups"],["Auto PR tracking","best weight & volume per lift"],["Full history","every set you've ever logged"]].map(([title,sub])=>(
+              <div key={title} style={{ display:"flex", alignItems:"center", gap:14 }}>
+                <span style={{ color:"#ef4444", fontSize:18 }}>→</span>
+                <div><span style={{ fontWeight:700, fontSize:14 }}>{title}</span><span style={{ color:"#555", ...mono, fontSize:12, marginLeft:8 }}>{sub}</span></div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background:"#1a1a1a", border:"1px solid #2a2a2a", padding:"32px", maxWidth:340, width:"100%", marginBottom:20 }}>
+            <div style={{ fontSize:28, fontWeight:700, letterSpacing:-1, marginBottom:4 }}>7 Days Free</div>
+            <div style={{ ...mono, fontSize:12, color:"#666", marginBottom:24, letterSpacing:1 }}>Then $15 / month. Cancel anytime.</div>
+            <button onClick={startTrial} style={{ width:"100%", padding:"16px", background:"#ef4444", color:"#fff", border:"none", ...mono, fontSize:13, fontWeight:700, letterSpacing:4, cursor:"pointer" }}>
+              START FREE TRIAL
+            </button>
+            <div style={{ marginTop:12, fontSize:11, color:"#444", ...mono, letterSpacing:1 }}>No credit card required to start.</div>
+          </div>
+          <div style={{ fontSize:11, color:"#333", ...mono, letterSpacing:1 }}>All data stored locally on your device.</div>
+        </div>
+      );
+
+      // Paywall
+      if (showPaywall || (trial.expired && !subscribed)) {
+        return <PaywallPage email={email} setEmail={setEmail} onSubscribe={handleSubscribe} payError={payError} paying={paying} stripeReady={stripeReady} />;
+      }
+
+      // Main app
+      return (
+        <div style={{ fontFamily:"'Georgia',serif", background:"#fafaf8", minHeight:"100vh", color:"#1a1a1a" }}>
+          <header style={{ background:"#1a1a1a", color:"#fafaf8", padding:"36px 32px 32px", textAlign:"center", position:"relative", overflow:"hidden" }}>
+            <div style={{ position:"absolute", inset:0, backgroundImage:"linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px)", backgroundSize:"40px 40px", pointerEvents:"none" }}/>
+            <div style={{ position:"relative" }}>
+              <div style={{ display:"inline-block", background:"#ef4444", color:"#fff", fontSize:10, ...mono, letterSpacing:4, padding:"4px 12px", marginBottom:16 }}>MVP — v0.1</div>
+              <h1 style={{ fontSize:"clamp(30px,7vw,52px)", fontWeight:700, margin:"0 0 8px", letterSpacing:-2, lineHeight:1.05 }}>Iron Log</h1>
+              <p style={{ fontSize:14, color:"#666", ...mono, margin:0 }}>The simplest workout tracker that stays out of your way.</p>
+            </div>
+          </header>
+
+          {trial.active && !subscribed && (
+            <div style={{ background:trial.daysLeft<=2?"#7f1d1d":"#1c1917", borderBottom:"1px solid #333", padding:"10px 20px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+              <span style={{ fontSize:12, ...mono, color:trial.daysLeft<=2?"#fca5a5":"#a3a3a3", letterSpacing:1 }}>
+                {trial.daysLeft<=2?"⚠ ":""}Free trial: <strong style={{ color:trial.daysLeft<=2?"#ef4444":"#fff" }}>{trial.daysLeft} day{trial.daysLeft!==1?"s":""} left</strong>
+              </span>
+              <button onClick={()=>setShowPaywall(true)} style={{ background:"#ef4444", color:"#fff", border:"none", padding:"5px 14px", fontSize:10, ...mono, fontWeight:700, letterSpacing:3, cursor:"pointer" }}>
+                SUBSCRIBE — $15/MO
+              </button>
+            </div>
+          )}
+
+          {subscribed && (
+            <div style={{ background:"#052e16", borderBottom:"1px solid #166534", padding:"8px 20px", textAlign:"center" }}>
+              <span style={{ fontSize:11, ...mono, color:"#86efac", letterSpacing:2 }}>✓ PRO — Active Subscription</span>
+            </div>
+          )}
+
+          {workouts.length>0 && (
+            <div style={{ background:"#f0ede8", borderBottom:"1px solid #e0dbd0", padding:"14px 32px", display:"flex", justifyContent:"center", gap:40, flexWrap:"wrap" }}>
+              {[["Workouts",workouts.length],["Exercises",Object.keys(prMap).length],["Today",todayLog.length]].map(([l,v])=>(
+                <div key={l} style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:22, fontWeight:700, letterSpacing:-1 }}>{v}</div>
+                  <div style={{ fontSize:10, ...mono, letterSpacing:3, color:"#888", textTransform:"uppercase" }}>{l}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ maxWidth:560, margin:"0 auto", padding:"0 20px 60px" }}>
+            <div style={{ display:"flex", borderBottom:"2px solid #e8e4dc", margin:"28px 0 24px" }}>
+              {[["log","Log Workout"],["history","History"],["progress","Progress"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setTab(k)} style={{ flex:1, padding:"10px 0", background:"none", border:"none", borderBottom:tab===k?"3px solid #ef4444":"3px solid transparent", color:tab===k?"#1a1a1a":"#aaa", ...mono, fontSize:11, fontWeight:700, letterSpacing:2, cursor:"pointer", textTransform:"uppercase" }}>{l}</button>
+              ))}
+            </div>
+
+            {tab==="log" && (
+              <div>
+                <FL>Exercise</FL>
+                <select value={form.exercise} onChange={e=>setForm(f=>({...f,exercise:e.target.value,muscle:groupOf(e.target.value)}))}
+                  style={{ ...inputBase, cursor:"pointer", marginBottom:16 }}>
+                  {Object.entries(EXERCISE_GROUPS).map(([g,exs])=>(
+                    <optgroup key={g} label={g}>{exs.map(ex=><option key={ex}>{ex}</option>)}</optgroup>
+                  ))}
+                </select>
+                <FL>Muscle Group</FL>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+                  <span style={{ padding:"5px 14px", fontSize:11, ...mono, letterSpacing:2, fontWeight:700, textTransform:"uppercase", border:`1.5px solid ${M_COLOR[form.muscle]||"#ddd"}`, background:`${M_COLOR[form.muscle]||"#ddd"}22`, color:M_COLOR[form.muscle]||"#888" }}>{form.muscle}</span>
+                  <span style={{ fontSize:11, ...mono, color:"#bbb" }}>auto-detected</span>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:16 }}>
+                  {[["Sets","sets","3"],["Reps","reps","8"],["Weight kg","weight","—"]].map(([label,key,ph])=>(
+                    <div key={key}><FL>{label}</FL><input type="number" min="0" value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))} placeholder={ph} style={inputBase}/></div>
+                  ))}
+                </div>
+                <FL>Note (optional)</FL>
+                <input value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="e.g. felt strong, PR attempt…" style={{ ...inputBase, marginBottom:16 }}/>
+                <button onClick={logWorkout} style={{ width:"100%", padding:"15px", background:flash?"#10b981":"#ef4444", color:"#fff", border:"none", ...mono, fontSize:12, fontWeight:700, letterSpacing:4, cursor:"pointer", transition:"background .25s" }}>
+                  {flash?"✓  LOGGED":"LOG WORKOUT"}
+                </button>
+                {todayLog.length>0&&(
+                  <div style={{ marginTop:32 }}>
+                    <SL>Today's Log</SL>
+                    {todayLog.map(w=><Card key={w.id} w={w} onDel={id=>saveWorkouts(workouts.filter(x=>x.id!==id))}/>)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab==="history"&&(
+              <div>
+                <SL>{workouts.length} total entries</SL>
+                {workouts.length===0&&<Empty text="Nothing logged yet." sub="Head to Log Workout to get started."/>}
+                {workouts.map(w=><Card key={w.id} w={w} onDel={id=>saveWorkouts(workouts.filter(x=>x.id!==id))} showDate/>)}
+              </div>
+            )}
+
+            {tab==="progress"&&(
+              <div>
+                <SL>{Object.keys(prMap).length} exercises tracked</SL>
+                {Object.keys(prMap).length===0&&<Empty text="No data yet." sub="Log a few workouts to see your progress."/>}
+                {Object.entries(prMap).map(([ex,entries])=>{
+                  const maxW=Math.max(...entries.map(e=>e.weight||0));
+                  const maxV=Math.max(...entries.map(e=>e.sets*e.reps*(e.weight||1)));
+                  const color=M_COLOR[entries[0]?.muscle]||"#888";
+                  return(
+                    <div key={ex} style={{ border:"1px solid #e8e4dc", borderLeft:`3px solid ${color}`, marginBottom:10, padding:"16px", background:"#fff" }}>
+                      <div style={{ fontWeight:700, fontSize:13, marginBottom:8 }}>{ex}</div>
+                      <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
+                        <Kpi label="Sessions" val={entries.length}/><Kpi label="Best Weight" val={maxW>0?`${maxW} kg`:"BW"} accent/><Kpi label="Best Volume" val={maxV.toLocaleString()}/><Kpi label="Last" val={fmtDate(entries[0].date)}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <footer style={{ borderTop:"1px solid #e8e4dc", textAlign:"center", padding:"24px", ...mono, fontSize:11, color:"#bbb", letterSpacing:2 }}>
+            IRON LOG · MVP BUILD · {new Date().getFullYear()}
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
