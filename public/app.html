@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Iron Log" />
 <meta name="theme-color" content="#0e0e0e" />
-<link rel="apple-touch-icon" href="icon.png" />
+<link rel="apple-touch-icon" href="icon.svg" />
   <title>Iron Log — Workout Tracker</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -236,7 +236,11 @@
           if (pmError) { setPayError(pmError.message); setPaying(false); return; }
           // In production: POST paymentMethod.id to your backend to create subscription
           // For now redirect to Stripe checkout
-          window.location.href = "/create-checkout-session";
+          const form = document.createElement("form");
+form.method = "POST";
+form.action = "/create-checkout-session";
+document.body.appendChild(form);
+form.submit();
         } catch (err) {
           setPayError("Something went wrong. Please try again.");
         } finally {
